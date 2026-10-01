@@ -1,0 +1,32 @@
+{
+  "cfg_version": 4,
+  "data_source": "evaldb",
+  "eval_src": "https://database.lichess.org/lichess_db_eval.jsonl.zst",
+  "pgn": "https://database.lichess.org/standard/lichess_db_standard_rated_2024-01.pgn.zst",
+  "min_elo": 1800,
+  "target_positions": 5000000,
+  "pos_per_game": 10,
+  "sf_depth": 12,
+  "workers": 22,
+  "append_data": false,
+  "epochs": 20,
+  "batch": 1024,
+  "blocks": 12,
+  "channels": 192,
+  "lr": 0.0015,
+  "resume": false,
+  "sims": 50,
+  "play_white": true,
+  "stockfish": "C:\\stockfish\\stockfish.exe",
+  "stockfish_elo": null,
+  "arena_games": 40,
+  "arena_elos": [
+    1400,
+    1600,
+    1800
+  ],
+  "book": "",
+  "syzygy": "",
+  "use_extras": true,
+  "cuda_tag": "cu128"
+}

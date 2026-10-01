@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="ro"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>AI Chess Bot</title>
+<style>
+ body{background:#16181e;color:#eceef3;font-family:system-ui,sans-serif;display:flex;flex-direction:column;align-items:center;margin:0;padding:16px}
+ #board{display:grid;grid-template-columns:repeat(8,1fr);grid-template-rows:repeat(8,1fr);width:min(92vw,560px);aspect-ratio:1;border:4px solid #36394a}
+ .sq{position:relative;display:flex;align-items:center;justify-content:center;font-size:min(8vw,48px);line-height:1;min-width:0;min-height:0;overflow:hidden;cursor:pointer;user-select:none}
+ .l{background:#f0d9b5}.d{background:#b58863}.sel{background:#f6f669!important}.last{background:#cdd26a!important}
+ .w{color:#fff;text-shadow:0 0 3px #000,0 0 3px #000}.b{color:#111;text-shadow:0 0 2px #ddd}
+ .dot::after{content:"";width:22%;height:22%;border-radius:50%;background:#0006;position:absolute}
+ button,select{background:#569cff;color:#fff;border:0;border-radius:8px;padding:8px 14px;margin:4px;font-size:15px}
+ #status{margin:10px;min-height:24px}
+</style></head><body>
+<h2>AI Chess Bot</h2>
+<div id="status">Se încarcă modelul...</div>
+<div id="board"></div>
+<div>
+ <button id="new">Joc nou</button><button id="flip">Joc cu negrul</button>
+ <select id="sims"><option>50</option><option selected>100</option><option>200</option><option>400</option></select> simulări
+</div>
+<script src="https://cdn.jsdelivr.net/npm/onnxruntime-web@1.20.1/dist/ort.min.js"></script>
+<script type="module">
+import { Chess } from "https://cdn.jsdelivr.net/npm/chess.js@1.0.0/+esm";
+
+const G = {p:"♟\uFE0E",n:"♞\uFE0E",b:"♝\uFE0E",r:"♜\uFE0E",q:"♛\uFE0E",k:"♚\uFE0E"};
+const ORDER = {p:0,n:1,b:2,r:3,q:4,k:5};
+let session, game = new Chess(), human = "w", sel = null, last = null, busy = false;
+const $ = id => document.getElementById(id);
+
+// ---------- codificare (identica cu chess_bot.py) ----------
+const fileOf = s => s.charCodeAt(0) - 97, rankOf = s => +s[1] - 1;
+const tr = (rank, white) => white ? rank : 7 - rank;
+const tsq = (s, white) => tr(rankOf(s), white) * 8 + fileOf(s);
+
+function encode(g) {
+  const us = g.turn(), white = us === "w", x = new Float32Array(17 * 64);
+  const b = g.board();
+  for (let row = 0; row < 8; row++) for (let f = 0; f < 8; f++) {
+    const p = b[row][f]; if (!p) continue;
+    const r = tr(7 - row, white);
+    x[((p.color === us ? 0 : 6) + ORDER[p.type]) * 64 + r * 8 + f] = 1;
+  }
+  const mine = g.getCastlingRights(us), theirs = g.getCastlingRights(white ? "b" : "w");
+  const fill = (pl, on) => { if (on) x.fill(1, pl * 64, pl * 64 + 64); };
+  fill(12, mine.k); fill(13, mine.q); fill(14, theirs.k); fill(15, theirs.q);
+  const h = g.history({ verbose: true }), lm = h[h.length - 1];
+  if (lm && lm.flags.includes("b")) {                         // en passant ca in python-chess
+    const r = (rankOf(lm.from) + rankOf(lm.to)) / 2;
+    x[16 * 64 + tr(r, white) * 8 + fileOf(lm.to)] = 1;
+  }
+  return x;
+}
+
+async function evaluate(g) {
+  const white = g.turn() === "w";
+  const moves = g.moves({ verbose: true }).filter(m => !m.promotion || m.promotion === "q");
+  const out = await session.run({ x: new ort.Tensor("float32", encode(g), [1, 17, 8, 8]) });
+  const pol = out.policy.data, v = out.value.data[0];
+  const l = moves.map(m => pol[tsq(m.from, white) * 64 + tsq(m.to, white)]);
+  const mx = Math.max(...l), e = l.map(z => Math.exp(z - mx)), s = e.reduce((a, b) => a + b, 0);
+  return { v, moves: moves.map((m, i) => ({ m, node: { p: e[i] / s, n: 0, w: 0, ch: null } })) };
+}
+
+// ---------- MCTS (PUCT, ca in chess_bot.py) ----------
+const q = n => n.n ? n.w / n.n : 0;
+function select(node) {
+  const sq = Math.sqrt(node.n + 1), fpu = q(node) - 0.15;
+  let best = null, bs = -1e18;
+  for (const c of node.ch) {
+    const s = (c.node.n ? -q(c.node) : fpu) + 1.5 * c.node.p * sq / (1 + c.node.n);
+    if (s > bs) { bs = s; best = c; }
+  }
+  return best;
+}
+async function search(g, sims) {
+  const root = { p: 0, n: 0, w: 0, ch: null };
+  root.ch = (await evaluate(g)).moves;
+  for (let i = 0; i < sims; i++) {
+    let node = root, path = [root], pushed = 0;
+    while (node.ch && node.ch.length) {
+      const c = select(node);
+      g.move({ from: c.m.from, to: c.m.to, promotion: c.m.promotion });
+      pushed++; node = c.node; path.push(node);
+    }
+    let v;
+    if (g.isGameOver()) v = g.isCheckmate() ? -1 : 0;
+    else { const e = await evaluate(g); node.ch = e.moves; v = e.v; }
+    while (pushed--) g.undo();
+    for (let k = path.length - 1; k >= 0; k--) { path[k].n++; path[k].w += v; v = -v; }
+    if (i % 10 === 0) { $("status").textContent = `Se gândește... ${i}/${sims}`; await new Promise(r => setTimeout(r)); }
+  }
+  return root.ch.reduce((a, b) => b.node.n > a.node.n ? b : a);
+}
+
+// ---------- UI ----------
+function draw() {
+  const el = $("board"); el.innerHTML = "";
+  const targets = sel ? game.moves({ square: sel, verbose: true }).map(m => m.to) : [];
+  for (let r = 0; r < 8; r++) for (let f = 0; f < 8; f++) {
+    const rank = human === "w" ? 7 - r : r, file = human === "w" ? f : 7 - f;
+    const name = "abcdefgh"[file] + (rank + 1), p = game.get(name);
+    const d = document.createElement("div");
+    d.className = "sq " + ((file + rank) % 2 ? "l" : "d") +
+      (name === sel ? " sel" : "") + (last && (last.from === name || last.to === name) ? " last" : "") +
+      (targets.includes(name) ? " dot" : "");
+    if (p) { d.textContent = G[p.type]; d.classList.add(p.color); }
+    d.onclick = () => click(name);
+    el.appendChild(d);
+  }
+  let s = game.isCheckmate() ? (game.turn() === human ? "Ai pierdut" : "Ai câștigat!")
+        : game.isGameOver() ? "Remiză" : busy ? $("status").textContent : "Rândul tău" + (game.inCheck() ? " (șah!)" : "");
+  $("status").textContent = s;
+}
+async function botMove() {
+  if (game.isGameOver()) return draw();
+  busy = true;
+  const c = await search(cloneGame(), +$("sims").value);
+  const m = game.move({ from: c.m.from, to: c.m.to, promotion: c.m.promotion });
+  last = m; busy = false; draw();
+}
+function cloneGame() {                         // pastreaza istoricul (repetitii, en passant)
+  const g = new Chess(); for (const m of game.history({ verbose: true })) g.move(m); return g;
+}
+function click(name) {
+  if (busy || game.isGameOver() || game.turn() !== human) return;
+  if (sel) {
+    const mv = game.moves({ square: sel, verbose: true }).find(m => m.to === name);
+    if (mv) { last = game.move({ from: sel, to: name, promotion: "q" }); sel = null; draw(); botMove(); return; }
+  }
+  const p = game.get(name); sel = p && p.color === human ? name : null; draw();
+}
+function newGame() { game = new Chess(); sel = last = null; busy = false; draw(); if (human === "b") botMove(); }
+$("new").onclick = newGame;
+$("flip").onclick = () => { human = human === "w" ? "b" : "w"; $("flip").textContent = human === "w" ? "Joc cu negrul" : "Joc cu albul"; newGame(); };
+
+try {
+  session = await ort.InferenceSession.create("model.onnx", { executionProviders: ["webgpu", "wasm"] });
+  newGame();
+} catch (e) { $("status").textContent = "Eroare la încărcarea modelului: " + e.message; }
+</script></body></html>
