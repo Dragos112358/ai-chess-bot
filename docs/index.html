@@ -9,8 +9,11 @@
  .l{background:#f0d9b5}.d{background:#b58863}.sel{background:#f6f669!important}.last{background:#cdd26a!important}
  .w{color:#fff;text-shadow:0 0 3px #000,0 0 3px #000}.b{color:#111;text-shadow:0 0 2px #ddd}
  .dot::after{content:"";width:22%;height:22%;border-radius:50%;background:#0006;position:absolute}
- button,select{background:#569cff;color:#fff;border:0;border-radius:8px;padding:8px 14px;margin:4px;font-size:15px}
+ button,select{background:#569cff;color:#fff;border:0;border-radius:8px;padding:8px 14px;margin:4px;font-size:15px;cursor:pointer}
  #status{margin:10px;min-height:24px}
+ #evalbar{width:min(92vw,560px);height:14px;background:#2b2e3a;border-radius:7px;overflow:hidden;margin-bottom:4px}
+ #evalfill{height:100%;width:50%;background:#eceef3;transition:width .4s}
+ #evaltxt{font-size:13px;color:#9aa0b4;margin-bottom:10px}
  #promo{position:fixed;inset:0;background:#000a;display:none;align-items:center;justify-content:center;z-index:10}
  #promo .box{background:#26293a;border-radius:12px;padding:16px;text-align:center}
  #promo .opts{display:flex;gap:8px;margin-top:10px}
@@ -19,10 +22,12 @@
 </style></head><body>
 <h2>AI Chess Bot</h2>
 <div id="status">Se încarcă modelul...</div>
+<div id="evalbar"><div id="evalfill"></div></div>
+<div id="evaltxt">Evaluare (alb): 0.00</div>
 <div id="board"></div>
 <div id="promo"><div class="box"><div>Promovează la:</div><div class="opts" id="promoOpts"></div></div></div>
 <div>
- <button id="new">Joc nou</button><button id="flip">Joc cu negrul</button>
+ <button id="new">Joc nou</button><button id="undo">Undo</button><button id="flip">Joc cu negrul</button>
  <select id="sims"><option>50</option><option selected>100</option><option>200</option><option>400</option></select> simulări
 </div>
 <script src="https://cdn.jsdelivr.net/npm/onnxruntime-web@1.20.1/dist/ort.min.js"></script>
@@ -31,8 +36,57 @@ import { Chess } from "https://cdn.jsdelivr.net/npm/chess.js@1.0.0/+esm";
 
 const G = {p:"♟\uFE0E",n:"♞\uFE0E",b:"♝\uFE0E",r:"♜\uFE0E",q:"♛\uFE0E",k:"♚\uFE0E"};
 const ORDER = {p:0,n:1,b:2,r:3,q:4,k:5};
-let session, game = new Chess(), human = "w", sel = null, last = null, busy = false;
+let session = null, game = new Chess(), human = "w", sel = null, last = null, busy = false, gen = 0;
 const $ = id => document.getElementById(id);
+
+// ---------- inferenta intr-un Web Worker (cu fallback pe thread-ul principal) ----------
+const WORKER_SRC = `
+importScripts("https://cdn.jsdelivr.net/npm/onnxruntime-web@1.20.1/dist/ort.min.js");
+ort.env.wasm.wasmPaths = "https://cdn.jsdelivr.net/npm/onnxruntime-web@1.20.1/dist/";
+let session;
+onmessage = async e => {
+  const d = e.data;
+  try {
+    if (d.type === "init") {
+      session = await ort.InferenceSession.create(d.url, { executionProviders: ["webgpu", "wasm"] });
+      postMessage({ type: "ready" });
+    } else {
+      const out = await session.run({ x: new ort.Tensor("float32", d.x, [1, 17, 8, 8]) });
+      postMessage({ id: d.id, pol: Float32Array.from(out.policy.data), v: out.value.data[0] });
+    }
+  } catch (err) { postMessage({ type: "error", id: d.id, message: String(err) }); }
+};`;
+
+let worker = null, nextId = 0;
+const pending = new Map();
+
+function startWorker() {
+  return new Promise((resolve, reject) => {
+    const w = new Worker(URL.createObjectURL(new Blob([WORKER_SRC], { type: "text/javascript" })));
+    const fail = err => { w.terminate(); reject(err); };
+    const timer = setTimeout(() => fail(new Error("timeout worker")), 60000);
+    w.onmessage = e => {
+      const d = e.data;
+      if (d.type === "ready") { clearTimeout(timer); worker = w; resolve(); }
+      else if (d.id === undefined) { clearTimeout(timer); fail(new Error(d.message)); }
+      else {
+        const p = pending.get(d.id); pending.delete(d.id);
+        d.type === "error" ? p.reject(new Error(d.message)) : p.resolve(d);
+      }
+    };
+    w.onerror = e => { clearTimeout(timer); fail(new Error(e.message || "eroare worker")); };
+    w.postMessage({ type: "init", url: new URL("model.onnx", location.href).href });
+  });
+}
+
+function infer(x) {
+  if (worker) return new Promise((resolve, reject) => {
+    const id = nextId++; pending.set(id, { resolve, reject });
+    worker.postMessage({ id, x }, [x.buffer]);
+  });
+  return session.run({ x: new ort.Tensor("float32", x, [1, 17, 8, 8]) })
+    .then(o => ({ pol: o.policy.data, v: o.value.data[0] }));
+}
 
 // ---------- codificare (identica cu chess_bot.py) ----------
 const fileOf = s => s.charCodeAt(0) - 97, rankOf = s => +s[1] - 1;
@@ -61,8 +115,7 @@ function encode(g) {
 async function evaluate(g) {
   const white = g.turn() === "w";
   const moves = g.moves({ verbose: true }).filter(m => !m.promotion || m.promotion === "q");
-  const out = await session.run({ x: new ort.Tensor("float32", encode(g), [1, 17, 8, 8]) });
-  const pol = out.policy.data, v = out.value.data[0];
+  const { pol, v } = await infer(encode(g));
   const l = moves.map(m => pol[tsq(m.from, white) * 64 + tsq(m.to, white)]);
   const mx = Math.max(...l), e = l.map(z => Math.exp(z - mx)), s = e.reduce((a, b) => a + b, 0);
   return { v, moves: moves.map((m, i) => ({ m, node: { p: e[i] / s, n: 0, w: 0, ch: null } })) };
@@ -79,10 +132,11 @@ function select(node) {
   }
   return best;
 }
-async function search(g, sims) {
+async function search(g, sims, myGen) {
   const root = { p: 0, n: 0, w: 0, ch: null };
   root.ch = (await evaluate(g)).moves;
   for (let i = 0; i < sims; i++) {
+    if (myGen !== gen) return null;                    // joc nou / undo in timpul cautarii
     let node = root, path = [root], pushed = 0;
     while (node.ch && node.ch.length) {
       const c = select(node);
@@ -94,9 +148,17 @@ async function search(g, sims) {
     else { const e = await evaluate(g); node.ch = e.moves; v = e.v; }
     while (pushed--) g.undo();
     for (let k = path.length - 1; k >= 0; k--) { path[k].n++; path[k].w += v; v = -v; }
-    if (i % 10 === 0) { $("status").textContent = `Se gândește... ${i}/${sims}`; await new Promise(r => setTimeout(r)); }
+    if (i % 10 === 0) $("status").textContent = `Se gândește... ${i}/${sims}`;
   }
-  return root.ch.reduce((a, b) => b.node.n > a.node.n ? b : a);
+  const best = root.ch.reduce((a, b) => b.node.n > a.node.n ? b : a);
+  return { best, value: q(root) };                     // value: din perspectiva botului
+}
+
+// ---------- bara de evaluare ----------
+function showEval(whiteValue) {
+  const v = Math.max(-1, Math.min(1, whiteValue));
+  $("evalfill").style.width = (50 + 50 * v) + "%";
+  $("evaltxt").textContent = "Evaluare (alb): " + (v >= 0 ? "+" : "") + v.toFixed(2);
 }
 
 // ---------- UI ----------
@@ -121,9 +183,14 @@ function draw() {
 async function botMove() {
   if (game.isGameOver()) return draw();
   busy = true;
-  const c = await search(cloneGame(), +$("sims").value);
+  const myGen = gen;
+  const res = await search(cloneGame(), +$("sims").value, myGen);
+  if (myGen !== gen || !res) return;                   // cautare invalidata
+  const { best: c, value } = res;
   const m = game.move({ from: c.m.from, to: c.m.to, promotion: c.m.promotion });
-  last = m; busy = false; draw();
+  last = m; busy = false;
+  showEval(human === "b" ? value : -value);            // convertit in perspectiva albului
+  draw();
 }
 function cloneGame() {                         // pastreaza istoricul (repetitii, en passant)
   const g = new Chess(); for (const m of game.history({ verbose: true })) g.move(m); return g;
@@ -156,12 +223,29 @@ function click(name) {
   }
   const p = game.get(name); sel = p && p.color === human ? name : null; draw();
 }
-function newGame() { hidePromo(); game = new Chess(); sel = last = null; busy = false; draw(); if (human === "b") botMove(); }
+function undo() {
+  if (busy || askingPromo) return;
+  const n = game.turn() === human ? 2 : 1;             // anuleaza mutarea botului + a ta
+  for (let i = 0; i < n; i++) game.undo();
+  gen++; sel = null;
+  const h = game.history({ verbose: true }); last = h.length ? h[h.length - 1] : null;
+  draw();
+  if (!game.isGameOver() && game.turn() !== human) botMove();
+}
+function newGame() {
+  gen++; hidePromo(); game = new Chess(); sel = last = null; busy = false;
+  showEval(0); draw(); if (human === "b") botMove();
+}
 $("new").onclick = newGame;
+$("undo").onclick = undo;
 $("flip").onclick = () => { human = human === "w" ? "b" : "w"; $("flip").textContent = human === "w" ? "Joc cu negrul" : "Joc cu albul"; newGame(); };
 
 try {
-  session = await ort.InferenceSession.create("model.onnx", { executionProviders: ["webgpu", "wasm"] });
+  try { await startWorker(); console.log("Inferenta ruleaza in Web Worker"); }
+  catch (err) {
+    console.warn("Worker indisponibil, inferenta pe thread-ul principal:", err);
+    session = await ort.InferenceSession.create("model.onnx", { executionProviders: ["webgpu", "wasm"] });
+  }
   newGame();
 } catch (e) { $("status").textContent = "Eroare la încărcarea modelului: " + e.message; }
 </script></body></html>
