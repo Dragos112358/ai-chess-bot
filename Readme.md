@@ -18,16 +18,24 @@ An AlphaZero-style chess engine: a **ResNet policy + value network** guides a **
 
 ## Results
 
-Matches against Stockfish limited with `UCI_Elo`, 0.1 s per move, **20 games per level** (colors alternated, random 4-ply openings shared by each pair of games), no opening book or tablebase. Each cell is the bot's **wins-draws-losses**. Every simulation budget was tested against Stockfish levels 1800 to 3000 in steps of 100; the table shows every second level (a level is skipped for larger budgets only if the bot scored under 5%).
+Matches against Stockfish limited with `UCI_Elo`, 0.1 s per move, **20 games per level** (colors alternated, random 4-ply openings shared by each pair of games), no opening book or tablebase. Each cell is the bot's **wins-draws-losses**. Every simulation budget was tested against Stockfish levels 1800 to 3000 in steps of 100 (`n/a` = skipped, because the bot scored under 5% at the previous level).
 
-| MCTS sims | SF 1800 | SF 2000 | SF 2200 | SF 2400 | SF 2600 | SF 2800 | SF 3000 | Estimated Elo |
-|---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|---:|
-| 50   | 12-4-4  | 8-6-6  | 4-4-12  | 5-4-11  | 1-5-14 | 0-5-15 | n/a     | ~2200 |
-| 100  | 12-3-5  | 10-3-7 | 6-6-8   | 2-6-12  | 1-7-12 | 0-4-16 | 2-4-14  | ~2270 |
-| 200  | 11-5-4  | 9-5-6  | 9-2-9   | 6-3-11  | 3-8-9  | 0-8-12 | 0-5-15  | ~2330 |
-| 400  | 12-4-4  | 12-4-4 | 9-5-6   | 8-5-7   | 2-10-8 | 2-4-14 | 0-8-12  | ~2360 |
-| 800  | 18-1-1  | 15-3-2 | 15-2-3  | 9-9-2   | 9-5-6  | 1-7-12 | 0-5-15  | ~2540 |
-| 1600 | 19-0-1  | 19-1-0 | 18-1-1  | 14-4-2  | 9-4-7  | 5-8-7  | 1-9-10  | ~2700 |
+| Stockfish level | 50 sims | 100 sims | 200 sims | 400 sims | 800 sims | 1600 sims |
+|---:|:---:|:---:|:---:|:---:|:---:|:---:|
+| 1800 | 12-4-4  | 12-3-5  | 11-5-4  | 12-4-4  | 18-1-1  | 19-0-1  |
+| 1900 | 9-4-7   | 14-0-6  | 14-2-4  | 15-3-2  | 19-0-1  | 20-0-0  |
+| 2000 | 8-6-6   | 10-3-7  | 9-5-6   | 12-4-4  | 15-3-2  | 19-1-0  |
+| 2100 | 6-2-12  | 9-4-7   | 12-2-6  | 11-4-5  | 14-4-2  | 19-0-1  |
+| 2200 | 4-4-12  | 6-6-8   | 9-2-9   | 9-5-6   | 15-2-3  | 18-1-1  |
+| 2300 | 7-6-7   | 8-4-8   | 7-5-8   | 8-7-5   | 15-3-2  | 15-5-0  |
+| 2400 | 5-4-11  | 2-6-12  | 6-3-11  | 8-5-7   | 9-9-2   | 14-4-2  |
+| 2500 | 3-5-12  | 2-8-10  | 3-9-8   | 1-10-9  | 8-6-6   | 18-1-1  |
+| 2600 | 1-5-14  | 1-7-12  | 3-8-9   | 2-10-8  | 9-5-6   | 9-4-7   |
+| 2700 | 2-7-11  | 2-6-12  | 3-7-10  | 1-7-12  | 2-13-5  | 7-7-6   |
+| 2800 | 0-5-15  | 0-4-16  | 0-8-12  | 2-4-14  | 1-7-12  | 5-8-7   |
+| 2900 | 0-0-20  | 0-2-18  | 0-5-15  | 0-4-16  | 0-11-9  | 1-7-12  |
+| 3000 | n/a     | 2-4-14  | 0-5-15  | 0-8-12  | 0-5-15  | 1-9-10  |
+| **Estimated Elo** | **~2201** | **~2272** | **~2333** | **~2358** | **~2542** | **~2702** |
 
 "Estimated Elo" is the average of the per-level performance estimates over the levels where the bot scored between 10% and 90% (levels outside that range say little about strength). The bot scores roughly 50% against SF ~2300 at 50–200 simulations, SF ~2400–2500 at 400–800, and SF ~2700–2800 at 1600.
 
