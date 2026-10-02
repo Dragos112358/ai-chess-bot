@@ -17,7 +17,7 @@
   "resume": false,
   "sims": 50,
   "play_white": true,
-  "stockfish": "C:\\stockfish\\stockfish.exe",
+  "stockfish": "C:\\Users\\Gaby\\Desktop\\AI_Chess_Bot\\stockfish_bin\\stockfish\\stockfish-windows-x86-64-universal.exe",
   "stockfish_elo": null,
   "arena_games": 40,
   "arena_elos": [
