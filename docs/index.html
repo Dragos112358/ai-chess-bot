@@ -11,10 +11,16 @@
  .dot::after{content:"";width:22%;height:22%;border-radius:50%;background:#0006;position:absolute}
  button,select{background:#569cff;color:#fff;border:0;border-radius:8px;padding:8px 14px;margin:4px;font-size:15px}
  #status{margin:10px;min-height:24px}
+ #promo{position:fixed;inset:0;background:#000a;display:none;align-items:center;justify-content:center;z-index:10}
+ #promo .box{background:#26293a;border-radius:12px;padding:16px;text-align:center}
+ #promo .opts{display:flex;gap:8px;margin-top:10px}
+ #promo .opt{width:72px;height:72px;font-size:48px;line-height:1;padding:0;margin:0;background:#f0d9b5;border-radius:8px;cursor:pointer}
+ #promo .opt:hover{background:#f6f669}
 </style></head><body>
 <h2>AI Chess Bot</h2>
 <div id="status">Se încarcă modelul...</div>
 <div id="board"></div>
+<div id="promo"><div class="box"><div>Promovează la:</div><div class="opts" id="promoOpts"></div></div></div>
 <div>
  <button id="new">Joc nou</button><button id="flip">Joc cu negrul</button>
  <select id="sims"><option>50</option><option selected>100</option><option>200</option><option>400</option></select> simulări
@@ -122,15 +128,35 @@ async function botMove() {
 function cloneGame() {                         // pastreaza istoricul (repetitii, en passant)
   const g = new Chess(); for (const m of game.history({ verbose: true })) g.move(m); return g;
 }
+let askingPromo = false;
+function play(from, to, promotion) {
+  last = game.move({ from, to, promotion }); sel = null; draw(); botMove();
+}
+function hidePromo() { askingPromo = false; $("promo").style.display = "none"; }
+function askPromo(from, to) {
+  askingPromo = true;
+  const box = $("promoOpts"); box.innerHTML = "";
+  for (const t of ["q", "r", "b", "n"]) {
+    const d = document.createElement("button");
+    d.className = "opt " + human; d.textContent = G[t];
+    d.onclick = () => { hidePromo(); play(from, to, t); };
+    box.appendChild(d);
+  }
+  $("promo").style.display = "flex";
+}
+$("promo").onclick = e => { if (e.target.id === "promo") { hidePromo(); sel = null; draw(); } };
 function click(name) {
-  if (busy || game.isGameOver() || game.turn() !== human) return;
+  if (busy || askingPromo || game.isGameOver() || game.turn() !== human) return;
   if (sel) {
-    const mv = game.moves({ square: sel, verbose: true }).find(m => m.to === name);
-    if (mv) { last = game.move({ from: sel, to: name, promotion: "q" }); sel = null; draw(); botMove(); return; }
+    const mvs = game.moves({ square: sel, verbose: true }).filter(m => m.to === name);
+    if (mvs.length) {
+      if (mvs[0].promotion) askPromo(sel, name); else play(sel, name);
+      return;
+    }
   }
   const p = game.get(name); sel = p && p.color === human ? name : null; draw();
 }
-function newGame() { game = new Chess(); sel = last = null; busy = false; draw(); if (human === "b") botMove(); }
+function newGame() { hidePromo(); game = new Chess(); sel = last = null; busy = false; draw(); if (human === "b") botMove(); }
 $("new").onclick = newGame;
 $("flip").onclick = () => { human = human === "w" ? "b" : "w"; $("flip").textContent = human === "w" ? "Joc cu negrul" : "Joc cu albul"; newGame(); };
 
