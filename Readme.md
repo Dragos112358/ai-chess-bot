@@ -2,10 +2,10 @@
 
 A chess engine in the style of AlphaZero: a neural network (policy + value) guides a **Monte Carlo Tree Search**. Trained with **PyTorch** on self-play data, exported to **ONNX**, and playable **entirely in the browser**, with no backend.
 
-**[▶ Play it live](https://github.com/Dragos112358/ai-chess-bot)**
+**[▶ Play it live](https://dragos112358.github.io/ai-chess-bot/)**
 
 <!-- Add a screenshot: save it as docs/screenshot.png and uncomment -->
-[screenshot](docs/screenshot.png)
+![screenshot](docs/screenshot.png)
 
 ---
 
