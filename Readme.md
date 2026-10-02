@@ -2,7 +2,7 @@
 
 An AlphaZero-style chess engine: a **ResNet policy + value network** guides a **Monte Carlo Tree Search (PUCT)**. The network is trained with **PyTorch** on millions of Stockfish-evaluated positions, exported to **ONNX**, and playable **entirely in the browser** with no backend.
 
-**[▶ Play it live](https://dragos112358.github.io/ai-chess-bot/)** · estimated strength **~1900–2100 Elo** on Stockfish's `UCI_Elo` scale (see [Results](#results) for the caveats)
+**[▶ Play it live](https://dragos112358.github.io/ai-chess-bot/)** · estimated strength **~2200–2700 Elo** on Stockfish's `UCI_Elo` scale, depending on the search budget (50 to 1600 MCTS simulations; see [Results](#results) for the caveats)
 
 ![screenshot](docs/screenshot.png)
 
@@ -13,27 +13,32 @@ An AlphaZero-style chess engine: a **ResNet policy + value network** guides a **
 - **Supervised training on Stockfish labels** from the Lichess evaluation database (policy = soft distribution over Stockfish's top-6 moves, value = squashed centipawn score)
 - **Batched MCTS** with virtual loss, an evaluation cache, tree reuse, fp16 inference and early stopping
 - **Runs in the browser**: `onnxruntime-web` with WebGPU and automatic WASM fallback, inference in a Web Worker so the UI never blocks
-- **Measured, not guessed**: Elo estimated by match play against Stockfish, with search strength swept from 50 to 800 simulations
+- **Measured, not guessed**: Elo estimated by match play against Stockfish levels 1800–3000, with search strength swept from 50 to 1600 simulations
 - Full desktop app (pygame): play, prepare data, train, run an Elo arena, and duel a new model against the previous one
 
 ## Results
 
-Matches against Stockfish 19 limited with `UCI_Elo`, 0.1 s per move, 20 games per level (colors alternated, random 4-ply openings shared by each pair of games), no opening book or tablebase. Score is from the bot's point of view (wins = draws = losses).
+Matches against Stockfish limited with `UCI_Elo`, 0.1 s per move, **20 games per level** (colors alternated, random 4-ply openings shared by each pair of games), no opening book or tablebase. Each cell is the bot's **wins-draws-losses**. Every simulation budget was tested against Stockfish levels 1800 to 3000 in steps of 100; the table shows every second level (a level is skipped for larger budgets only if the bot scored under 5%).
 
-| MCTS sims | vs SF 1350 | vs SF 1500 | vs SF 1700 | Estimated Elo |
-|---:|:---:|:---:|:---:|---:|
-| 50  | 20-0-0 | 18-0-2 | 14-2-4 | ~1890 |
-| 100 | 20-0-0 | 17-1-2 | 13-4-3 | ~1860 |
-| 200 | 18-1-1 | 19-1-0 | 16-3-1 | ~2040 |
-| 400 | 20-0-0 | 17-1-2 | 19-1-0 | ~1840 |
-| 800 | 20-0-0 | 20-0-0 | 18-2-0 | ~2110 |
+| MCTS sims | SF 1800 | SF 2000 | SF 2200 | SF 2400 | SF 2600 | SF 2800 | SF 3000 | Estimated Elo |
+|---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|---:|
+| 50   | 12-4-4  | 8-6-6  | 4-4-12  | 5-4-11  | 1-5-14 | 0-5-15 | n/a     | ~2200 |
+| 100  | 12-3-5  | 10-3-7 | 6-6-8   | 2-6-12  | 1-7-12 | 0-4-16 | 2-4-14  | ~2270 |
+| 200  | 11-5-4  | 9-5-6  | 9-2-9   | 6-3-11  | 3-8-9  | 0-8-12 | 0-5-15  | ~2330 |
+| 400  | 12-4-4  | 12-4-4 | 9-5-6   | 8-5-7   | 2-10-8 | 2-4-14 | 0-8-12  | ~2360 |
+| 800  | 18-1-1  | 15-3-2 | 15-2-3  | 9-9-2   | 9-5-6  | 1-7-12 | 0-5-15  | ~2540 |
+| 1600 | 19-0-1  | 19-1-0 | 18-1-1  | 14-4-2  | 9-4-7  | 5-8-7  | 1-9-10  | ~2700 |
+
+"Estimated Elo" is the average of the per-level performance estimates over the levels where the bot scored between 10% and 90% (levels outside that range say little about strength). The bot scores roughly 50% against SF ~2300 at 50–200 simulations, SF ~2400–2500 at 400–800, and SF ~2700–2800 at 1600.
 
 **How to read this honestly**
 
-- The bot wins the large majority of games at every level, so it is clearly **stronger than Stockfish's 1700 setting**. The estimates are only **lower-bound-ish**: a 100% score (e.g. vs 1350) only says the opponent was too weak to measure against, and the formula caps the estimate.
-- With 20 games per level the uncertainty is large (roughly ±150–200 Elo), which is why the estimate does **not rise monotonically** with simulations. The sweep shows a weak trend, not a precise curve.
-- `UCI_Elo` is calibrated against Stockfish's own rating list at a specific time control, so these numbers are **not directly comparable to Lichess or FIDE ratings**.
-- To tighten the estimate: test against higher Stockfish levels (1900–2200) with 100+ games each. A plain `Find_ELO.py` script is included for this.
+- Strength clearly **grows with search budget**: going from 50 to 1600 simulations moves the 50%-score point from about SF 2200–2300 up to about SF 2700–2800.
+- With 20 games per level the uncertainty is large (the 95% interval of a single level is roughly ±150 Elo), so individual cells are noisy. For example, 1600 simulations scored 93% against SF 2500 but only 55% against SF 2600. Compare the trend, not single cells.
+- The per-level estimates **rise with the opponent's level** (e.g. at 800 simulations: ~2270 against SF 2000, ~2650 against SF 2600). If `UCI_Elo` were perfectly linear they would be flat, so the scale is clearly not linear at this time control. The levels where the score is closest to 50% are the most reliable.
+- `UCI_Elo` is calibrated against Stockfish's own rating list at a much longer time control than 0.1 s per move. At 0.1 s Stockfish is probably weaker than its nominal rating, so these numbers likely **overstate** the bot's strength and are **not comparable to Lichess or FIDE ratings**.
+- The measured numbers are for the **desktop engine**. The browser version uses a simpler search (no batching, cache or tree reuse) and offers up to 400 simulations, so expect somewhat different play at equal simulations.
+- To tighten the estimate: 100+ games per level, focused on the levels near the 50% crossing point. `Find_ELO.py` is included for this.
 
 ## How it works
 
@@ -108,13 +113,13 @@ Python · PyTorch · ONNX · onnxruntime-web (WebGPU / WASM) · Web Workers · J
 - **No underpromotion for the bot:** the policy head predicts only from/to squares, so the bot always promotes to a queen (humans can pick any piece).
 - **Supervised, not self-play:** the network imitates Stockfish's evaluations, so it inherits their strengths and biases; reinforcement learning from self-play is not implemented.
 - **Browser vs desktop:** the browser engine is simpler (no batching, cache or tree reuse), so at equal simulations it can play differently from the measured desktop engine.
-- The Elo estimate is noisy and relative to Stockfish's `UCI_Elo` scale (see [Results](#results)).
+- The Elo estimate is noisy and relative to Stockfish's `UCI_Elo` scale at 0.1 s per move (see [Results](#results)).
 
 ## Roadmap
 
 - [x] Move inference into a Web Worker so the UI never blocks
 - [x] Undo button and evaluation bar
-- [x] Elo measurement against Stockfish
-- [ ] Larger Elo test (higher Stockfish levels, 100+ games per level)
+- [x] Elo measurement against Stockfish (levels 1800–3000, 50–1600 simulations)
+- [ ] More games per level (100+) around the 50% crossing point to tighten the confidence intervals
 - [ ] More data and a stronger network, then self-play fine-tuning
 - [ ] Underpromotion support in the policy head
