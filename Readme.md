@@ -34,7 +34,7 @@ Matches against Stockfish limited with `UCI_Elo`, 0.1 s per move, **20 games per
 | 2700 | 2-7-11  | 2-6-12  | 3-7-10  | 1-7-12  | 2-13-5  | 7-7-6   |
 | 2800 | 0-5-15  | 0-4-16  | 0-8-12  | 2-4-14  | 1-7-12  | 5-8-7   |
 | 2900 | 0-0-20  | 0-2-18  | 0-5-15  | 0-4-16  | 0-11-9  | 1-7-12  |
-| 3000 | n/a     | 2-4-14  | 0-5-15  | 0-8-12  | 0-5-15  | 1-9-10  |
+| 3000 | 0-0-20  | 2-4-14  | 0-5-15  | 0-8-12  | 0-5-15  | 1-9-10  |
 | **Estimated Elo** | **~2201** | **~2272** | **~2333** | **~2358** | **~2542** | **~2702** |
 
 "Estimated Elo" is the average of the per-level performance estimates over the levels where the bot scored between 10% and 90% (levels outside that range say little about strength). The bot scores roughly 50% against SF ~2300 at 50–200 simulations, SF ~2400–2500 at 400–800, and SF ~2700–2800 at 1600.
